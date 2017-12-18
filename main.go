@@ -22,7 +22,7 @@ func main() {
 	// Create a target server client.
 	targetClient := createClient(conf.targetServer)
 
-	// Create check file list.
+	// Create check file lists.
 	sc, tc := make(chan string), make(chan string)
 	go find(sc, sourceClient, conf)
 	go find(tc, targetClient, conf)
@@ -30,6 +30,7 @@ func main() {
 	defer sourceFile.Close()
 	defer targetFile.Close()
 
+	// Scan the file lists and check diff.
 	sourceScanner, targetScanner := bufio.NewScanner(sourceFile), bufio.NewScanner(targetFile)
 	sourceNext, targetNext := sourceScanner.Scan(), targetScanner.Scan()
 	for {
