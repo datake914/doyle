@@ -10,7 +10,7 @@ func Find(client Client, conf *config) (*Result, error) {
 }
 
 func FindToFile(client Client, conf *config) (*Result, error) {
-	stdOut, err := ioutil.TempFile(*conf.tmpDir, "find")
+	stdOut, err := ioutil.TempFile(conf.tmpDir, "find")
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create temporary file: %s", err)
 	}

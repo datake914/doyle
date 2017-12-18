@@ -14,61 +14,24 @@ import (
 func main() {
 	// Parse command line arguments.
 	conf := parse()
-
 	// Create a temporary directory.
-	exe, err := os.Executable()
-	if err != nil {
-		fmt.Printf("%+v\n", err)
-		os.Exit(1)
-	}
-	tmp, err := ioutil.TempDir(filepath.Dir(exe), "tmp")
-	if err != nil {
-		fmt.Printf("%+v\n", err)
-		os.Exit(1)
-	}
-	conf.tmpDir = &tmp
+	conf.tmpDir = createTempDir()
 
 	// Create a source server client.
-	sourceClient, err := NewSshClient(conf.sourceServer)
-	if err != nil {
-		fmt.Println(err)
-	}
+	sourceClient := createClient(conf.sourceServer)
 	// Create a target server client.
-	targetClient, err := NewSshClient(conf.targetServer)
-	if err != nil {
-		fmt.Println(err)
-	}
-	clients := [2]Client{sourceClient, targetClient}
+	targetClient := createClient(conf.targetServer)
 
-	// Create target file list.
-	c := make(chan string)
-	for _, client := range clients {
-		go func(c chan string, client Client) {
-			result, err := FindToFile(client, conf)
-			if err != nil {
-				fmt.Printf("%+v\n", err)
-				os.Exit(1)
-			}
-			c <- result.StdoutPath
-		}(c, client)
-	}
-	sourcePath, targetPath := <-c, <-c
-	sourceFile, err := os.Open(sourcePath)
-	if err != nil {
-		fmt.Printf("File %s could not read: %v\n", sourcePath, err)
-		os.Exit(1)
-	}
+	// Create check file list.
+	sc, tc := make(chan string), make(chan string)
+	go find(sc, sourceClient, conf)
+	go find(tc, targetClient, conf)
+	sourceFile, targetFile := openFile(<-sc), openFile(<-tc)
 	defer sourceFile.Close()
-	targetFile, err := os.Open(targetPath)
-	if err != nil {
-		fmt.Printf("File %s could not read: %v\n", targetPath, err)
-		os.Exit(1)
-	}
 	defer targetFile.Close()
 
 	sourceScanner, targetScanner := bufio.NewScanner(sourceFile), bufio.NewScanner(targetFile)
 	sourceNext, targetNext := sourceScanner.Scan(), targetScanner.Scan()
-	scstat, tcstat, sccat, tccat := make(chan *Result), make(chan *Result), make(chan *Result), make(chan *Result)
 	for {
 		sourceFileName, targetFileName := sourceScanner.Text(), targetScanner.Text()
 		if !sourceNext && !targetNext {
@@ -87,15 +50,15 @@ func main() {
 			// When the source file name is equal to the target file name.
 			case 0:
 				// Get file stat.
-				go stat(scstat, sourceClient, sourceFileName)
-				go stat(tcstat, targetClient, targetFileName)
-				sourceStatResult, targetStatResult := <-scstat, <-tcstat
+				go stat(sc, sourceClient, sourceFileName)
+				go stat(tc, targetClient, targetFileName)
+				sourceStat, targetStat := <-sc, <-tc
 				// Get file content.
-				go catMd5sum(sccat, sourceClient, sourceFileName)
-				go catMd5sum(tccat, targetClient, targetFileName)
-				sourceCatMd5sumResult, targetCatMd5sumResult := <-sccat, <-tccat
+				go catMd5sum(sc, sourceClient, sourceFileName)
+				go catMd5sum(tc, targetClient, targetFileName)
+				sourceContent, targetContent := <-sc, <-tc
 
-				if sourceStat, targetStat, sourceContent, targetContent := sourceStatResult.Stdout, targetStatResult.Stdout, sourceCatMd5sumResult.Stdout, targetCatMd5sumResult.Stdout; sourceStat != targetStat || sourceContent != targetContent {
+				if sourceStat != targetStat || sourceContent != targetContent {
 					fmt.Println("M " + sourceFileName)
 					if *conf.detail {
 						if sourceStat != targetStat {
@@ -107,7 +70,6 @@ func main() {
 				} else {
 					fmt.Println("  " + sourceFileName)
 				}
-
 				sourceNext = sourceScanner.Scan()
 				targetNext = targetScanner.Scan()
 			// When the target file does not exist in the source server.
@@ -121,30 +83,72 @@ func main() {
 			}
 		}
 	}
-
 	// Delete a temporary directory.
-	if err := os.RemoveAll(tmp); err != nil {
-		fmt.Printf("%+v\n", err)
-		os.Exit(1)
+	removeTempDir(conf.tmpDir)
+}
+
+func createTempDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		handleErr(err)
+	}
+	tmp, err := ioutil.TempDir(filepath.Dir(exe), "tmp")
+	if err != nil {
+		handleErr(err)
+	}
+	return tmp
+}
+
+func removeTempDir(path string) {
+	if err := os.RemoveAll(path); err != nil {
+		handleErr(err)
 	}
 }
 
-func stat(c chan *Result, client Client, fileName string) {
+func createClient(conf *ServerConfig) Client {
+	switch *conf.Host {
+	case "localhost":
+		fmt.Println("localhost target is not supported.")
+	default:
+		client, err := NewSshClient(conf)
+		if err != nil {
+			handleErr(fmt.Errorf("client creation failed: %s", err))
+		}
+		return client
+	}
+	return nil
+}
+
+func openFile(path string) *os.File {
+	file, err := os.Open(path)
+	if err != nil {
+		handleErr(fmt.Errorf("File %s could not read: %v", path, err))
+	}
+	return file
+}
+
+func find(c chan string, client Client, conf *config) {
+	result, err := FindToFile(client, conf)
+	if err != nil {
+		handleErr(err)
+	}
+	c <- result.Stdout
+}
+
+func stat(c chan string, client Client, fileName string) {
 	result, err := Stat(client, fileName)
 	if err != nil {
-		fmt.Printf("%+v\n", err)
-		os.Exit(1)
+		handleErr(err)
 	}
-	c <- result
+	c <- result.Stdout
 }
 
-func catMd5sum(c chan *Result, client Client, fileName string) {
+func catMd5sum(c chan string, client Client, fileName string) {
 	result, err := CatMd5sum(client, fileName)
 	if err != nil {
-		fmt.Printf("%+v\n", err)
-		os.Exit(1)
+		handleErr(err)
 	}
-	c <- result
+	c <- result.Stdout
 }
 
 func diff(source, target string) {
@@ -159,4 +163,9 @@ func diff(source, target string) {
 			fmt.Println("< " + diff.Text)
 		}
 	}
+}
+
+func handleErr(err error) {
+	fmt.Printf("%+v\n", err)
+	os.Exit(1)
 }

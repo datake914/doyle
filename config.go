@@ -6,7 +6,7 @@ type config struct {
 	targets      *[]string
 	excludes     *[]string
 	includes     *[]string
-	tmpDir       *string
+	tmpDir       string
 	detail       *bool
 	sourceServer *ServerConfig
 	targetServer *ServerConfig
