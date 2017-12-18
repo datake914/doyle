@@ -54,14 +54,7 @@ func (c *sshClient) execWithPipe(cmd string, sudo bool, stdConf *stdConfig) (*Re
 	// Open a new Session.
 	session, err := c.client.NewSession()
 	if err != nil {
-		// Retry with new ssh client.
-		newClient, err := NewSshClient(c.conf)
-		if err != nil {
-			result.ExitStatus = 999
-			return result, fmt.Errorf("Failed to create new client: %v\n", err)
-		}
-		c.client = newClient.client
-		return c.execWithPipe(cmd, sudo, stdConf)
+		return nil, fmt.Errorf("Failed to create a new session: %v\n", err)
 	}
 	defer session.Close()
 
@@ -91,20 +84,19 @@ func (c *sshClient) execWithPipe(cmd string, sudo bool, stdConf *stdConfig) (*Re
 	session.Stderr = stderr
 
 	// Run command.
-	if err = session.Run(c.decorateCmd(cmd, sudo)); err != nil {
+	cmd = c.decorateCmd(cmd, sudo)
+	result.Cmd = cmd
+	if err = session.Run(cmd); err != nil {
 		if exitErr, ok := err.(*ssh.ExitError); ok {
 			result.ExitStatus = exitErr.ExitStatus()
 		} else {
-			// Retry.
-			fmt.Printf("[ERROR] command execution failed: %s\n", c.decorateCmd(cmd, sudo))
-			return c.execWithPipe(cmd, sudo, stdConf)
+			return result, fmt.Errorf("command[%s] execution failed: %s", cmd, err)
 		}
 	} else {
 		result.ExitStatus = 0
 	}
 
 	// Set exec result.
-	result.Cmd = cmd
 	if buf, ok := stdout.(*bytes.Buffer); ok {
 		result.Stdout = buf.String()
 	}

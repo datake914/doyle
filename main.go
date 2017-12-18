@@ -86,28 +86,28 @@ func main() {
 			switch strings.Compare(sourceFileName, targetFileName) {
 			// When the source file name is equal to the target file name.
 			case 0:
+				// Get file stat.
 				go stat(scstat, sourceClient, sourceFileName)
 				go stat(tcstat, targetClient, targetFileName)
+				sourceStatResult, targetStatResult := <-scstat, <-tcstat
+				// Get file content.
 				go catMd5sum(sccat, sourceClient, sourceFileName)
 				go catMd5sum(tccat, targetClient, targetFileName)
+				sourceCatMd5sumResult, targetCatMd5sumResult := <-sccat, <-tccat
 
-				sourceStatResult, targetStatResult, sourceCatMd5sumResult, targetCatMd5sumResult := <-scstat, <-tcstat, <-sccat, <-tccat
-				if sourceStatResult.ExitStatus != 999 && targetStatResult.ExitStatus != 999 && sourceCatMd5sumResult.ExitStatus != 999 && targetCatMd5sumResult.ExitStatus != 999 {
-					if sourceStat, targetStat, sourceContent, targetContent := sourceStatResult.Stdout, targetStatResult.Stdout, sourceCatMd5sumResult.Stdout, targetCatMd5sumResult.Stdout; sourceStat != targetStat || sourceContent != targetContent {
-						fmt.Println("M " + sourceFileName)
-						if *conf.detail {
-							if sourceStat != targetStat {
-								diff(sourceStat, targetStat)
-							} else {
-								diff(sourceContent, targetContent)
-							}
+				if sourceStat, targetStat, sourceContent, targetContent := sourceStatResult.Stdout, targetStatResult.Stdout, sourceCatMd5sumResult.Stdout, targetCatMd5sumResult.Stdout; sourceStat != targetStat || sourceContent != targetContent {
+					fmt.Println("M " + sourceFileName)
+					if *conf.detail {
+						if sourceStat != targetStat {
+							diff(sourceStat, targetStat)
+						} else {
+							diff(sourceContent, targetContent)
 						}
-					} else {
-						fmt.Println("  " + sourceFileName)
 					}
 				} else {
-					fmt.Printf("[ERROR] %s diff failed. Try again.", sourceFileName)
+					fmt.Println("  " + sourceFileName)
 				}
+
 				sourceNext = sourceScanner.Scan()
 				targetNext = targetScanner.Scan()
 			// When the target file does not exist in the source server.
@@ -133,7 +133,7 @@ func stat(c chan *Result, client Client, fileName string) {
 	result, err := Stat(client, fileName)
 	if err != nil {
 		fmt.Printf("%+v\n", err)
-		// os.Exit(1)
+		os.Exit(1)
 	}
 	c <- result
 }
@@ -142,7 +142,7 @@ func catMd5sum(c chan *Result, client Client, fileName string) {
 	result, err := CatMd5sum(client, fileName)
 	if err != nil {
 		fmt.Printf("%+v\n", err)
-		// os.Exit(1)
+		os.Exit(1)
 	}
 	c <- result
 }
