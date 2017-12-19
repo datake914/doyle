@@ -31,7 +31,7 @@ func parse() *config {
 			Host:    kingpin.Flag("srcHost", "Source server host").Required().String(),
 			Port:    kingpin.Flag("srcPort", "Source server port").String(),
 			User:    kingpin.Flag("srcUser", "Source server user").Required().String(),
-			Pass:    kingpin.Flag("secPass", "Source server password").String(),
+			Pass:    kingpin.Flag("srcPass", "Source server password").String(),
 			KeyPath: kingpin.Flag("srcKeyPath", "Source server key file path").String(),
 			KeyPass: kingpin.Flag("srcKeyPass", "Source server key file password").String(),
 		},
